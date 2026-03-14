@@ -206,12 +206,25 @@ export class TransactionTracker {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       
-      // Check if error is definitely non-retryable (authentication, invalid hash format, etc.)
+      // Check if error is retryable (network/timeout errors)
+      const isRetryable = error instanceof Error && (
+        errorMessage.toLowerCase().includes('timeout') ||
+        errorMessage.toLowerCase().includes('econnrefused') ||
+        errorMessage.toLowerCase().includes('enotfound') ||
+        errorMessage.toLowerCase().includes('network') ||
+        errorMessage.toLowerCase().includes('fetch failed') ||
+        errorMessage.toLowerCase().includes('socket') ||
+        errorMessage.toLowerCase().includes('etimedout')
+      );
+      
+      // Check if error is definitely non-retryable
       const isNonRetryable = error instanceof Error && (
-        errorMessage.includes('unauthorized') ||
-        errorMessage.includes('forbidden') ||
-        errorMessage.includes('invalid hash') ||
-        errorMessage.includes('malformed')
+        errorMessage.toLowerCase().includes('unauthorized') ||
+        errorMessage.toLowerCase().includes('forbidden') ||
+        errorMessage.toLowerCase().includes('invalid hash') ||
+        errorMessage.toLowerCase().includes('malformed') ||
+        errorMessage.toLowerCase().includes('bad request') ||
+        errorMessage.toLowerCase().includes('not found') && !errorMessage.toLowerCase().includes('transaction')
       );
       
       if (isNonRetryable) {
@@ -225,14 +238,25 @@ export class TransactionTracker {
         };
       }
       
-      // Default to PENDING for all other errors to allow retries
-      // This is safer as waitForConfirmation will timeout eventually
+      if (isRetryable) {
+        // Network/timeout error - return PENDING to retry
+        return {
+          hash,
+          status: TransactionStatus.PENDING,
+          network: this.network,
+          operationType,
+          errorMessage: `Transient network error: ${errorMessage}`,
+        };
+      }
+      
+      // Unknown error - return FAILED to avoid masking issues
+      // waitForConfirmation can be called again if needed
       return {
         hash,
-        status: TransactionStatus.PENDING,
+        status: TransactionStatus.FAILED,
         network: this.network,
         operationType,
-        errorMessage: `Transient error (will retry): ${errorMessage}`,
+        errorMessage: `RPC error: ${errorMessage}`,
       };
     }
   }
