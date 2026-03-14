@@ -1,7 +1,4 @@
 import { rpc, Networks } from "@stellar/stellar-sdk";
-import * as dotenv from "dotenv";
-
-dotenv.config({ path: ".env" });
 
 /**
  * Transaction status types
@@ -135,7 +132,18 @@ export class TransactionTracker {
    */
   async getTransactionStatus(hash: string): Promise<TransactionStatusResponse> {
     const metadata = this.trackedTransactions.get(hash);
-    const operationType = metadata?.operationType || OperationType.PAYMENT;
+    
+    if (!metadata) {
+      return {
+        hash,
+        status: TransactionStatus.NOT_FOUND,
+        network: this.network,
+        operationType: OperationType.PAYMENT,
+        errorMessage: "Transaction not tracked. Use trackTransaction() first.",
+      };
+    }
+    
+    const operationType = metadata.operationType;
 
     try {
       const txResponse = await this.server.getTransaction(hash);
@@ -196,13 +204,14 @@ export class TransactionTracker {
         operationType,
       };
     } catch (error) {
+      // Treat RPC/network errors as transient - return PENDING to allow retries
       const errorMessage = error instanceof Error ? error.message : String(error);
       return {
         hash,
-        status: TransactionStatus.FAILED,
+        status: TransactionStatus.PENDING,
         network: this.network,
         operationType,
-        errorMessage: `Failed to query transaction: ${errorMessage}`,
+        errorMessage: `Transient error querying transaction: ${errorMessage}`,
       };
     }
   }

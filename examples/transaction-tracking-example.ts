@@ -107,17 +107,18 @@ async function multipleTransactionsExample() {
     "hash_3_lp_deposit",
   ];
 
-  // Track all transactions
+  // Track all transactions with their respective operation types
   tracker.trackTransaction(txHashes[0], OperationType.SWAP);
   tracker.trackTransaction(txHashes[1], OperationType.BRIDGE);
   tracker.trackTransaction(txHashes[2], OperationType.LP_DEPOSIT);
 
-  // Monitor all transactions simultaneously
+  // Monitor each transaction individually to preserve their operation types
   console.log("Monitoring multiple transactions...");
-  const statuses = await tracker.monitorTransactions(
-    txHashes,
-    OperationType.SWAP // Default operation type for monitoring
-  );
+  const statuses = await Promise.all([
+    tracker.waitForConfirmation(txHashes[0], OperationType.SWAP),
+    tracker.waitForConfirmation(txHashes[1], OperationType.BRIDGE),
+    tracker.waitForConfirmation(txHashes[2], OperationType.LP_DEPOSIT),
+  ]);
 
   // Display results
   statuses.forEach((status, index) => {

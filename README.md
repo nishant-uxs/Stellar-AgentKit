@@ -300,7 +300,7 @@ AgentKit includes a comprehensive transaction tracking system to monitor and man
 ### Basic Usage
 
 ```typescript
-import { AgentClient, OperationType, TransactionStatus } from "stellartools";
+import { AgentClient, OperationType, TransactionStatus } from "stellar-agentkit";
 
 const agent = new AgentClient({
   network: "testnet",
@@ -328,7 +328,7 @@ if (status.status === TransactionStatus.SUCCESS) {
 ### Standalone Tracker
 
 ```typescript
-import { createTransactionTracker, OperationType } from "stellartools";
+import { createTransactionTracker, OperationType } from "stellar-agentkit";
 
 const tracker = createTransactionTracker({
   network: "testnet",

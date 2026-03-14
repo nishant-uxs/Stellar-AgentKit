@@ -374,7 +374,8 @@ tracker.updateNetwork("mainnet");
 // Track mainnet transactions
 tracker.trackTransaction("mainnet_tx", OperationType.BRIDGE);
 
-// Tracked transactions persist across network changes
+// Note: Tracked transaction metadata persists, but status queries use current network
+// Querying "testnet_tx" after switching to mainnet will query mainnet RPC
 console.log("Total tracked:", tracker.getTrackedTransactions().size);
 ```
 
@@ -479,10 +480,15 @@ setInterval(() => {
   const now = Date.now();
   const oneHourAgo = now - 3600000;
   
+  // Note: getTrackedTransactions() returns a copy, so we need to clear the tracker directly
+  // For now, use clearTracking() to remove all old transactions
+  // Or implement a custom removeTransaction() method in your tracker
+  
+  // Simple approach: clear all if any are old
   for (const [hash, metadata] of tracked) {
     if (metadata.timestamp < oneHourAgo) {
-      // Remove old transactions
-      tracked.delete(hash);
+      tracker.clearTracking();
+      break;
     }
   }
 }, 3600000); // Every hour
