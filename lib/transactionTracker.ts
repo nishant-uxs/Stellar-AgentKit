@@ -250,8 +250,12 @@ export class TransactionTracker {
       }
       
       // Unknown error - return PENDING to allow retries
-      // waitForConfirmation will timeout if error persists
-      // This balances between retrying transient issues and not masking permanent failures
+      // Design tradeoff: We default to PENDING for unknown errors because:
+      // 1. Many RPC errors are transient (rate limits, temporary unavailability)
+      // 2. waitForConfirmation has timeout + maxRetries protection against infinite loops
+      // 3. Failing fast on unknown errors would prevent recovery from transient issues
+      // 4. Users can check errorMessage to diagnose persistent failures
+      // The timeout mechanism provides safety against masking permanent failures
       return {
         hash,
         status: TransactionStatus.PENDING,
