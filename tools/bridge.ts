@@ -70,15 +70,18 @@ export const bridgeTokenTool = new DynamicStructuredTool({
       );
     }
 
-    // Use network-specific RPC URL
+    // Use network-specific RPC URL with proper fallback chain
     const rpcUrl = fromNetwork === "stellar-mainnet"
-      ? process.env.SRB_MAINNET_PROVIDER_URL || "https://soroban.stellar.org"
+      ? process.env.SRB_MAINNET_PROVIDER_URL || process.env.SRB_PROVIDER_URL || "https://soroban.stellar.org"
       : process.env.SRB_PROVIDER_URL || "https://soroban-testnet.stellar.org";
     
-    const sdk = new AllbridgeCoreSdk({
+    // Configure SDK with network-specific settings
+    const sdkConfig = {
       ...nodeRpcUrlsDefault,
       SRB: rpcUrl,
-    });
+    };
+    
+    const sdk = new AllbridgeCoreSdk(sdkConfig);
 
     const chainDetailsMap = await sdk.chainDetailsMap();
 

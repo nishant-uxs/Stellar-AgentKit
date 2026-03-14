@@ -204,14 +204,35 @@ export class TransactionTracker {
         operationType,
       };
     } catch (error) {
-      // Treat RPC/network errors as transient - return PENDING to allow retries
       const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      // Check if error is retryable (network/timeout errors)
+      const isRetryable = error instanceof Error && (
+        errorMessage.includes('timeout') ||
+        errorMessage.includes('ECONNREFUSED') ||
+        errorMessage.includes('ENOTFOUND') ||
+        errorMessage.includes('network') ||
+        errorMessage.includes('fetch failed')
+      );
+      
+      if (isRetryable) {
+        // Treat as transient - return PENDING to allow retries
+        return {
+          hash,
+          status: TransactionStatus.PENDING,
+          network: this.network,
+          operationType,
+          errorMessage: `Transient network error: ${errorMessage}`,
+        };
+      }
+      
+      // Non-retryable error - return FAILED
       return {
         hash,
-        status: TransactionStatus.PENDING,
+        status: TransactionStatus.FAILED,
         network: this.network,
         operationType,
-        errorMessage: `Transient error querying transaction: ${errorMessage}`,
+        errorMessage: `Query failed: ${errorMessage}`,
       };
     }
   }

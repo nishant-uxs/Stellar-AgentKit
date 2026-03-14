@@ -43,18 +43,21 @@ describe("TransactionTracker", () => {
 
     test("should use environment variables for RPC URL", () => {
       const originalEnv = process.env.SRB_PROVIDER_URL;
-      process.env.SRB_PROVIDER_URL = "https://env-rpc.stellar.org";
       
-      const envTracker = new TransactionTracker({ network: "testnet" });
-      const networkInfo = envTracker.getNetworkInfo();
-      
-      expect(networkInfo.rpcUrl).toBe("https://env-rpc.stellar.org");
-      
-      // Properly restore or delete the env variable
-      if (originalEnv !== undefined) {
-        process.env.SRB_PROVIDER_URL = originalEnv;
-      } else {
-        delete process.env.SRB_PROVIDER_URL;
+      try {
+        process.env.SRB_PROVIDER_URL = "https://env-rpc.stellar.org";
+        
+        const envTracker = new TransactionTracker({ network: "testnet" });
+        const networkInfo = envTracker.getNetworkInfo();
+        
+        expect(networkInfo.rpcUrl).toBe("https://env-rpc.stellar.org");
+      } finally {
+        // Always restore or delete the env variable, even if test throws
+        if (originalEnv !== undefined) {
+          process.env.SRB_PROVIDER_URL = originalEnv;
+        } else {
+          delete process.env.SRB_PROVIDER_URL;
+        }
       }
     });
   });

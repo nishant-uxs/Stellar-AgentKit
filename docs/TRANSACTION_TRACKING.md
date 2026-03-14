@@ -474,21 +474,33 @@ console.log("User:", metadata.params.userId);
 ### 4. Clean Up Tracking History
 
 ```typescript
-// Periodically clear old transactions
+// Note: The TransactionTracker doesn't currently provide a removeTransaction() method
+// To clean up old transactions, you can use clearTracking() to remove all tracked transactions
+// or maintain your own tracking map alongside the tracker
+
+// Option 1: Clear all tracking periodically
 setInterval(() => {
-  const tracked = tracker.getTrackedTransactions();
+  tracker.clearTracking();
+  console.log("Cleared all tracked transactions");
+}, 3600000); // Every hour
+
+// Option 2: Maintain your own tracking with selective cleanup
+const myTracking = new Map<string, { hash: string; timestamp: number }>();
+
+// Track transactions in both places
+function trackWithCleanup(hash: string, operationType: OperationType) {
+  tracker.trackTransaction(hash, operationType);
+  myTracking.set(hash, { hash, timestamp: Date.now() });
+}
+
+// Clean up old entries from your map
+setInterval(() => {
   const now = Date.now();
   const oneHourAgo = now - 3600000;
   
-  // Note: getTrackedTransactions() returns a copy, so we need to clear the tracker directly
-  // For now, use clearTracking() to remove all old transactions
-  // Or implement a custom removeTransaction() method in your tracker
-  
-  // Simple approach: clear all if any are old
-  for (const [hash, metadata] of tracked) {
-    if (metadata.timestamp < oneHourAgo) {
-      tracker.clearTracking();
-      break;
+  for (const [hash, data] of myTracking) {
+    if (data.timestamp < oneHourAgo) {
+      myTracking.delete(hash);
     }
   }
 }, 3600000); // Every hour
