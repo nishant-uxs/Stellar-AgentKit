@@ -5,9 +5,18 @@ import {
   getReserves as contractGetReserves,
   getShareId as contractGetShareId,
 } from "./lib/contract";
+import {
+  quoteSwap as quoteDexSwap,
+  swapBestRoute as executeBestRouteSwap,
+  type StellarAssetInput,
+  type QuoteSwapParams,
+  type RouteQuote,
+  type SwapBestRouteParams,
+  type SwapBestRouteResult,
+} from "./lib/dex";
 import { bridgeTokenTool } from "./tools/bridge";
 import {
-  Server,
+  Horizon,
   Keypair,
   Asset,
   TransactionBuilder,
@@ -48,6 +57,14 @@ export interface LaunchTokenResult {
   distributorPublicKey: string;
   issuerLocked: boolean;
 }
+
+export type {
+  StellarAssetInput,
+  QuoteSwapParams,
+  RouteQuote,
+  SwapBestRouteParams,
+  SwapBestRouteResult,
+};
 
 export class AgentClient {
   private network: "testnet" | "mainnet";
@@ -176,6 +193,38 @@ export class AgentClient {
   };
 
   /**
+   * Stellar Classic DEX routing.
+   *
+   * These methods use Horizon pathfinding and path payment operations, which can
+   * route through the SDEX and built-in liquidity pools.
+   */
+  public dex = {
+    quoteSwap: async (params: QuoteSwapParams): Promise<RouteQuote[]> => {
+      return await quoteDexSwap(
+        {
+          network: this.network,
+          horizonUrl: this.rpcUrl,
+          publicKey: this.publicKey,
+        },
+        params
+      );
+    },
+
+    swapBestRoute: async (
+      params: SwapBestRouteParams
+    ): Promise<SwapBestRouteResult> => {
+      return await executeBestRouteSwap(
+        {
+          network: this.network,
+          horizonUrl: this.rpcUrl,
+          publicKey: this.publicKey,
+        },
+        params
+      );
+    },
+  };
+
+  /**
    * Launch a new token on the Stellar network.
    * 
    * ⚠️ SECURITY CRITICAL: This function handles sensitive operations:
@@ -236,8 +285,8 @@ export class AgentClient {
       const distributorPublicKey = distributorKeypair.publicKey();
 
       // Connect to Stellar network
-      const server = new Server(this.rpcUrl);
-      const networkPassphrase = this.network === "mainnet" ? Networks.PUBLIC : Networks.TESTNET;
+      const server = new Horizon.Server(this.rpcUrl);
+      const networkPassphrase = Networks.TESTNET;
 
       // Step 1: Load or create issuer account
       let issuerAccount;
@@ -349,14 +398,14 @@ export class AgentClient {
    * @returns true if trustline exists, false otherwise
    */
   private async checkTrustlineExists(
-    server: Server, 
+    server: Horizon.Server, 
     accountPublicKey: string, 
     asset: Asset
   ): Promise<boolean> {
     try {
       const account = await server.loadAccount(accountPublicKey);
       
-      return account.balances.some(balance => {
+      return account.balances.some((balance: any) => {
         if (balance.asset_type === 'native') return false;
         
         return (
@@ -386,7 +435,7 @@ export class AgentClient {
    * @returns Transaction hash of the trustline creation
    */
   private async createTrustline(
-    server: Server,
+    server: Horizon.Server,
     accountKeypair: Keypair,
     asset: Asset,
     networkPassphrase: string
@@ -436,7 +485,7 @@ export class AgentClient {
    * @returns Transaction hash of the locking operation
    */
   private async lockIssuerAccount(
-    server: Server,
+    server: Horizon.Server,
     issuerKeypair: Keypair,
     networkPassphrase: string
   ): Promise<{ hash: string }> {
