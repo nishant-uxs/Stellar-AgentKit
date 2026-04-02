@@ -18,8 +18,10 @@
     "build": "tsc",
     "prepare": "npm run build",
     "postbuild": "copyfiles index.d.ts dist/",
-    "test": "node dist/tests/errors.test.js && node dist/tests/agentKitError.test.js && node dist/tests/buildTransaction.test.js && node dist/tests/contract-errors.test.js",
-    "docs:generate": "typedoc"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@allbridge/bridge-core-sdk": "^3.22.0",
@@ -33,8 +35,12 @@
   },
   "devDependencies": {
     "@types/big.js": "^6.2.2",
+    "@types/node": "^25.3.0",
+    "@vitest/coverage-v8": "^4.0.18",
+    "@vitest/ui": "^4.0.18",
+    "c8": "^10.1.3",
     "copyfiles": "^2.4.1",
-    "typedoc": "^0.27.0"
+    "vitest": "^4.0.18"
   },
   "directories": {
     "lib": "lib"

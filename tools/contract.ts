@@ -31,7 +31,7 @@ export const StellarLiquidityContractTool = new DynamicStructuredTool({
     inMax: z.string().optional(), // For swap
     shareAmount: z.string().optional(), // For withdraw
   }),
-  func: async (input: unknown) => {
+  func: async (input: any) => {
     const {
       action,
       to,
@@ -43,18 +43,7 @@ export const StellarLiquidityContractTool = new DynamicStructuredTool({
       out,
       inMax,
       shareAmount,
-    } = input as {
-      action: "get_share_id" | "deposit" | "swap" | "withdraw" | "get_reserves";
-      to?: string;
-      desiredA?: string;
-      minA?: string;
-      desiredB?: string;
-      minB?: string;
-      buyA?: boolean;
-      out?: string;
-      inMax?: string;
-      shareAmount?: string;
-    };
+    } = input;
     try {
       switch (action) {
         case "get_share_id": {
