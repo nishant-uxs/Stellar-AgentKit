@@ -245,7 +245,7 @@ export class AgentClient {
 
       // Connect to Stellar network
       const server = new Horizon.Server(this.rpcUrl);
-      const networkPassphrase = (this.network as string) === "mainnet" ? Networks.PUBLIC : Networks.TESTNET;
+      const networkPassphrase = Networks.TESTNET;
 
       // Step 1: Load or create issuer account
       let issuerAccount;
@@ -357,7 +357,7 @@ export class AgentClient {
    * @returns true if trustline exists, false otherwise
    */
   private async checkTrustlineExists(
-    server: Horizon.Server, 
+    server: Horizon.Server,
     accountPublicKey: string, 
     asset: Asset
   ): Promise<boolean> {
@@ -365,7 +365,7 @@ export class AgentClient {
       const account = await server.loadAccount(accountPublicKey);
       
       return account.balances.some((balance: Horizon.HorizonApi.BalanceLine) => {
-        if (balance.asset_type === 'native') return false;
+        if (balance.asset_type === 'native' || balance.asset_type === 'liquidity_pool_shares') return false;
         
         return (
           balance.asset_code === asset.code &&
