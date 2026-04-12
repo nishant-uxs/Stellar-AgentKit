@@ -114,13 +114,15 @@ export class AgentClient {
     buyA: boolean;
     out: string;
     inMax: string;
+    contractAddress?: string;
   }) {
     return await contractSwap(
       this.publicKey,
       params.to,
       params.buyA,
       params.out,
-      params.inMax
+      params.inMax,
+      { network: this.network, rpcUrl: this.rpcUrl, contractAddress: params.contractAddress }
     );
   }
 
@@ -142,7 +144,7 @@ export class AgentClient {
   async bridge(params: {
     amount: string;
     toAddress: string;
-    targetChain?: TargetChain;
+    targetChain?: "ethereum" | "polygon" | "arbitrum" | "base";
   }) {
     return await bridgeTokenTool.func({
       amount: params.amount,
@@ -165,6 +167,7 @@ export class AgentClient {
       minA: string;
       desiredB: string;
       minB: string;
+      contractAddress?: string;
     }) => {
       return await contractDeposit(
         this.publicKey,
@@ -172,7 +175,8 @@ export class AgentClient {
         params.desiredA,
         params.minA,
         params.desiredB,
-        params.minB
+        params.minB,
+        { network: this.network, rpcUrl: this.rpcUrl, contractAddress: params.contractAddress }
       );
     },
 
@@ -181,22 +185,24 @@ export class AgentClient {
       shareAmount: string;
       minA: string;
       minB: string;
+      contractAddress?: string;
     }) => {
       return await contractWithdraw(
         this.publicKey,
         params.to,
         params.shareAmount,
         params.minA,
-        params.minB
+        params.minB,
+        { network: this.network, rpcUrl: this.rpcUrl, contractAddress: params.contractAddress }
       );
     },
 
-    getReserves: async () => {
-      return await contractGetReserves(this.publicKey);
+    getReserves: async (params?: { contractAddress?: string }) => {
+      return await contractGetReserves(this.publicKey, { network: this.network, rpcUrl: this.rpcUrl, contractAddress: params?.contractAddress });
     },
 
-    getShareId: async () => {
-      return await contractGetShareId(this.publicKey);
+    getShareId: async (params?: { contractAddress?: string }) => {
+      return await contractGetShareId(this.publicKey, { network: this.network, rpcUrl: this.rpcUrl, contractAddress: params?.contractAddress });
     },
   };
 

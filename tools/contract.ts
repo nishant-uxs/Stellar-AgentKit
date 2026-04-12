@@ -10,6 +10,8 @@ import {
 
 // Assuming env variables are already loaded elsewhere
 const STELLAR_PUBLIC_KEY = process.env.STELLAR_PUBLIC_KEY!;
+const STELLAR_NETWORK = (process.env.STELLAR_NETWORK as "testnet" | "mainnet") || "testnet";
+const SOROBAN_RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 
 if (!STELLAR_PUBLIC_KEY) {
   throw new Error("Missing Stellar environment variables");
@@ -30,6 +32,7 @@ export const StellarLiquidityContractTool = new DynamicStructuredTool({
     out: z.string().optional(), // For swap
     inMax: z.string().optional(), // For swap
     shareAmount: z.string().optional(), // For withdraw
+    contractAddress: z.string().optional(), // For overriding default pool on mainnet
   }),
   func: async (input: any) => {
     const {
@@ -43,38 +46,46 @@ export const StellarLiquidityContractTool = new DynamicStructuredTool({
       out,
       inMax,
       shareAmount,
+      contractAddress,
     } = input;
+    
+    const config = {
+      network: STELLAR_NETWORK,
+      rpcUrl: SOROBAN_RPC_URL,
+      contractAddress,
+    };
+    
     try {
       switch (action) {
         case "get_share_id": {
-          const result = await getShareId(STELLAR_PUBLIC_KEY);
+          const result = await getShareId(STELLAR_PUBLIC_KEY, config);
           return result ?? "No share ID found.";
         }
         case "deposit": {
           if (!to || !desiredA || !minA || !desiredB || !minB) {
             throw new Error("to, desiredA, minA, desiredB, and minB are required for deposit");
           }
-          const result = await deposit(STELLAR_PUBLIC_KEY, to, desiredA, minA, desiredB, minB);
+          const result = await deposit(STELLAR_PUBLIC_KEY, to, desiredA, minA, desiredB, minB, config);
           return result ??`Deposited successfully to ${to}.`;
         }
         case "swap": {
           if (!to || buyA === undefined || !out || !inMax) {
             throw new Error("to, buyA, out, and inMax are required for swap");
           }
-          const result=await swap(STELLAR_PUBLIC_KEY, to, buyA, out, inMax);
+          const result=await swap(STELLAR_PUBLIC_KEY, to, buyA, out, inMax, config);
           return result ?? `Swapped successfully to ${to}.`;
         }
         case "withdraw": {
           if (!to || !shareAmount || !minA || !minB) {
             throw new Error("to, shareAmount, minA, and minB are required for withdraw");
           }
-          const result = await withdraw(STELLAR_PUBLIC_KEY, to, shareAmount, minA, minB);
+          const result = await withdraw(STELLAR_PUBLIC_KEY, to, shareAmount, minA, minB, config);
           return result
             ? `Withdrawn successfully to ${to}: ${JSON.stringify(result)}`
             : "Withdraw failed or returned no value.";
         }
         case "get_reserves": {
-          const result = await getReserves(STELLAR_PUBLIC_KEY);
+          const result = await getReserves(STELLAR_PUBLIC_KEY, config);
           return result
             ? `Reserves: ${JSON.stringify(result)}`
             : "No reserves found.";

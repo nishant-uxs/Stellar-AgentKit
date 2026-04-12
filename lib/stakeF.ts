@@ -8,11 +8,9 @@ import {
   } from "@stellar/stellar-sdk";
   import {signTransaction} from "./stellar";
   import { buildTransaction } from "../utils/buildTransaction";
+  import { SorobanContractConfig } from "./contract";
   
-  // Configuration
-  const rpcUrl = "https://soroban-testnet.stellar.org";
-  const contractAddress = "CBTYOERLDPHPODHLZ7XKPUIJJTEZKYMBKEUA2JBCRPRMMDK6A4GM2UZF"; // Replace with actual deployed contract address
-  const networkPassphrase = Networks.TESTNET;
+  const DEFAULT_STAKE_CONTRACT = "CBTYOERLDPHPODHLZ7XKPUIJJTEZKYMBKEUA2JBCRPRMMDK6A4GM2UZF";
   
   const addressToScVal = (address: string) => {
     // Validate address format
@@ -27,14 +25,24 @@ import {
     return nativeToScVal(value, { type: "i128" });
   };
   
-  const contractInt = async (caller: string, functName: string, values: any) => {
+  const contractInt = async (
+    caller: string, 
+    functName: string, 
+    values: any,
+    config: SorobanContractConfig = { network: "testnet", rpcUrl: "https://soroban-testnet.stellar.org" }
+  ) => {
     try {
-      const server = new rpc.Server(rpcUrl, { allowHttp: true });
+      const server = new rpc.Server(config.rpcUrl, { allowHttp: true });
       const sourceAccount = await server.getAccount(caller).catch((err) => {
         throw new Error(`Failed to fetch account ${caller}: ${err.message}`);
       });
   
-      const contract = new Contract(contractAddress);
+      const targetContractId = config.contractAddress || (config.network === "testnet" ? DEFAULT_STAKE_CONTRACT : "");
+      if (!targetContractId) {
+        throw new Error("A specific contractAddress must be provided for Soroban Staking operations on mainnet.");
+      }
+
+      const contract = new Contract(targetContractId);
   
       // Build transaction using unified builder
       const sorobanOperation = {
@@ -52,7 +60,8 @@ import {
       
       let signedTxResponse: string;
       try {
-        signedTxResponse = signTransaction(prepareTxXDR, networkPassphrase);
+        const passphrase = config.network === "mainnet" ? Networks.PUBLIC : Networks.TESTNET;
+        signedTxResponse = signTransaction(prepareTxXDR, passphrase);
       } catch (err: any) {
         throw new Error(`Failed to sign transaction: ${err.message}`);
       }
@@ -60,7 +69,8 @@ import {
       // Handle both string and object response from signTransaction
       const signedXDR = signedTxResponse;
   
-      const tx = TransactionBuilder.fromXDR(signedXDR, Networks.TESTNET);
+      const passphrase = config.network === "mainnet" ? Networks.PUBLIC : Networks.TESTNET;
+      const tx = TransactionBuilder.fromXDR(signedXDR, passphrase);
       const txResult = await server.sendTransaction(tx).catch((err) => {
         throw new Error(`Failed to send transaction: ${err.message}`);
       });
@@ -88,11 +98,11 @@ import {
   };
   
   // Contract interaction functions
-  async function initialize(caller: string, tokenAddress: string, rewardRate: number) {
+  async function initialize(caller: string, tokenAddress: string, rewardRate: number, config?: SorobanContractConfig) {
     try {
       const tokenScVal = addressToScVal(tokenAddress);
       const rewardRateScVal = numberToI128(rewardRate);
-      await contractInt(caller, "initialize", [tokenScVal, rewardRateScVal]);
+      await contractInt(caller, "initialize", [tokenScVal, rewardRateScVal], config);
       return "Contract initialized successfully";
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -100,11 +110,11 @@ import {
     }
   }
   
-  async function stake(caller: string, amount: number) {
+  async function stake(caller: string, amount: number, config?: SorobanContractConfig) {
     try {
       const userScVal = addressToScVal(caller);
       const amountScVal = numberToI128(amount);
-      await contractInt(caller, "stake", [userScVal, amountScVal]);
+      await contractInt(caller, "stake", [userScVal, amountScVal], config);
       return `Staked ${amount} successfully`;
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -112,11 +122,11 @@ import {
     }
   }
   
-  async function unstake(caller: string, amount: number) {
+  async function unstake(caller: string, amount: number, config?: SorobanContractConfig) {
     try {
       const userScVal = addressToScVal(caller);
       const amountScVal = numberToI128(amount);
-      await contractInt(caller, "unstake", [userScVal, amountScVal]);
+      await contractInt(caller, "unstake", [userScVal, amountScVal], config);
       return `Unstaked ${amount} successfully`;
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -124,10 +134,10 @@ import {
     }
   }
   
-  async function claimRewards(caller: string) {
+  async function claimRewards(caller: string, config?: SorobanContractConfig) {
     try {
       const userScVal = addressToScVal(caller);
-      await contractInt(caller, "claim_rewards", userScVal);
+      await contractInt(caller, "claim_rewards", userScVal, config);
       return "Rewards claimed successfully";
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -135,10 +145,10 @@ import {
     }
   }
   
-  async function getStake(caller: string, userAddress: string) {
+  async function getStake(caller: string, userAddress: string, config?: SorobanContractConfig) {
     try {
       const userScVal = addressToScVal(userAddress);
-      const result = await contractInt(caller, "get_stake", userScVal);
+      const result = await contractInt(caller, "get_stake", userScVal, config);
       return `Stake for ${userAddress}: ${result}`;
       return result; // Returns i128 as a BigInt
     } catch (error: unknown) {

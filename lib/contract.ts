@@ -12,10 +12,14 @@ import {
   import { signTransaction } from "./stellar";
   import { buildTransaction } from "../utils/buildTransaction";
   
-  // Configuration
-  const rpcUrl = "https://soroban-testnet.stellar.org";
-  const contractAddress = "CCUMBJFVC3YJOW3OOR6WTWTESH473ZSXQEGYPQDWXAYYC4J77OT4NVHJ"; // From networks.testnet.contractId
-  const networkPassphrase = Networks.TESTNET;
+  export interface SorobanContractConfig {
+    network: "testnet" | "mainnet";
+    rpcUrl: string;
+    contractAddress?: string; // If omitted, defaults to testnet pool below
+    simulate?: boolean; // Dry-run simulation mode
+  }
+  
+  const DEFAULT_TESTNET_CONTRACT = "CCUMBJFVC3YJOW3OOR6WTWTESH473ZSXQEGYPQDWXAYYC4J77OT4NVHJ";
   
   // Utility functions for ScVal conversion
   const addressToScVal = (address: string) => {
@@ -35,14 +39,24 @@ import {
   };
   
   // Core contract interaction function
-  const contractInt = async (caller: string, functName: string, values: any) => {
+  const contractInt = async (
+    caller: string, 
+    functName: string, 
+    values: any, 
+    config: SorobanContractConfig = { network: "testnet", rpcUrl: "https://soroban-testnet.stellar.org" }
+  ) => {
     try {
-      const server = new rpc.Server(rpcUrl, { allowHttp: true });
+      const server = new rpc.Server(config.rpcUrl, { allowHttp: true });
       const sourceAccount = await server.getAccount(caller).catch((err) => {
         throw new Error(`Failed to fetch account ${caller}: ${err.message}`);
       });
   
-      const contract = new Contract(contractAddress);
+      const targetContractId = config.contractAddress || (config.network === "testnet" ? DEFAULT_TESTNET_CONTRACT : "");
+      if (!targetContractId) {
+        throw new Error("A specific contractAddress must be provided for Soroban LP/Swap operations on mainnet.");
+      }
+
+      const contract = new Contract(targetContractId);
   
       // Build transaction using unified builder
       const sorobanOperation = {
@@ -52,46 +66,41 @@ import {
       };
       const transaction = buildTransaction("lp", sourceAccount, sorobanOperation);
   
-      const simulation = await server.simulateTransaction(transaction).catch((err) => {
-        console.error(`Simulation failed for ${functName}: ${err.message}`);
-        throw new Error(`Failed to simulate transaction: ${err.message}`);
-      });
-  
-      console.log(`Simulation response for ${functName}:`, JSON.stringify(simulation, null, 2));
-  
-      if ("results" in simulation && Array.isArray(simulation.results) && simulation.results.length > 0) {
-        console.log(`Read-only call detected for ${functName}`);
-        const result = simulation.results[0];
-        if (result.xdr) {
-          try {
-            // Parse the return value from XDR
-            const scVal = xdr.ScVal.fromXDR(result.xdr, "base64");
-            const parsedValue = scValToNative(scVal);
-            console.log(`Parsed simulation result for ${functName}:`, parsedValue);
-            return parsedValue; // Returns string for share_id, array for get_rsrvs
-          } catch (err) {
-            console.error(`Failed to parse XDR for ${functName}:`, err);
-            throw new Error(`Failed to parse simulation result: ${err instanceof Error ? err.message : String(err)}`);
-          }
+      // Simulate transaction if requested
+      if (config.simulate) {
+        const simulation = await server.simulateTransaction(transaction) as any;
+        if (simulation.error) {
+          throw new Error(`Simulation Failed: ${simulation.error}`);
         }
-        console.error(`No xdr field in simulation results[0] for ${functName}:`, result);
-        throw new Error("No return value in simulation results");
-      } else if ("error" in simulation) {
-        console.error(`Simulation error for ${functName}:`, simulation.error);
-        throw new Error(`Simulation failed: ${simulation.error}`);
+        
+        let returnValue = null;
+        if (simulation.result?.retval) {
+           try {
+             returnValue = scValToNative(simulation.result.retval);
+           } catch(e) {
+             returnValue = "Failed to parse return value";
+           }
+        }
+
+        return JSON.stringify({
+          status: "simulated",
+          minResourceFee: simulation.minResourceFee,
+          cost: simulation.cost,
+          events: simulation.events?.length || 0,
+          result: returnValue
+        }, (key, value) => typeof value === 'bigint' ? value.toString() : value, 2);
       }
-  
-      // For state-changing calls, prepare and submit transaction
-      console.log(`Submitting transaction for ${functName}`);
+
+      // Prepare and sign transaction
       const preparedTx = await server.prepareTransaction(transaction).catch((err) => {
-        console.error(`Prepare transaction failed for ${functName}: ${err.message}`);
         throw new Error(`Failed to prepare transaction: ${err.message}`);
       });
       const prepareTxXDR = preparedTx.toXDR();
-  
+      
       let signedTxResponse: string;
       try {
-        signedTxResponse = signTransaction(prepareTxXDR, networkPassphrase);
+        const passphrase = config.network === "mainnet" ? Networks.PUBLIC : Networks.TESTNET;
+        signedTxResponse = signTransaction(prepareTxXDR, passphrase);
       } catch (err: any) {
         throw new Error(`Failed to sign transaction: ${err.message}`);
       }
@@ -99,7 +108,8 @@ import {
       // Handle both string and object response from signTransaction
       const signedXDR = signedTxResponse
   
-      const tx = TransactionBuilder.fromXDR(signedXDR, Networks.TESTNET);
+      const passphrase = config.network === "mainnet" ? Networks.PUBLIC : Networks.TESTNET;
+      const tx = TransactionBuilder.fromXDR(signedXDR, passphrase);
       const txResult = await server.sendTransaction(tx).catch((err) => {
         console.error(`Send transaction failed for ${functName}: ${err.message}`);
         throw new Error(`Send transaction failed: ${err.message}`);
@@ -146,9 +156,10 @@ import {
   };
   
   // Contract interaction functions
-  export async function getShareId(caller: string): Promise<string | null> {
+  export async function getShareId(caller: string, config?: SorobanContractConfig): Promise<string | null> {
     try {
-      const result = await contractInt(caller, "share_id", null);
+      const result = await contractInt(caller, "share_id", null, config);
+      if (config?.simulate) return result as any; // Forward the simulation text
       console.log("Share ID:", result);
       return result as string | null;
     } catch (error: unknown) {
@@ -164,7 +175,8 @@ import {
     desiredA: string,
     minA: string,
     desiredB: string,
-    minB: string
+    minB: string,
+    config?: SorobanContractConfig
   ) {
     try {
       const toScVal = addressToScVal(to);
@@ -172,13 +184,14 @@ import {
       const minAScVal = numberToI128(minA);
       const desiredBScVal = numberToI128(desiredB);
       const minBScVal = numberToI128(minB);
-      await contractInt(caller, "deposit", [
+      const result = await contractInt(caller, "deposit", [
         toScVal,
         desiredAScVal,
         minAScVal,
         desiredBScVal,
         minBScVal,
-      ]);
+      ], config);
+      if (config?.simulate) return result as any; // Forward the simulation text
       console.log(`Deposited successfully to ${to}`);
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -192,14 +205,16 @@ import {
     to: string,
     buyA: boolean,
     out: string,
-    inMax: string
+    inMax: string,
+    config?: SorobanContractConfig
   ) {
     try {
       const toScVal = addressToScVal(to);
       const buyAScVal = booleanToScVal(buyA);
       const outScVal = numberToI128(out);
       const inMaxScVal = numberToI128(inMax);
-      await contractInt(caller, "swap", [toScVal, buyAScVal, outScVal, inMaxScVal]);
+      const result = await contractInt(caller, "swap", [toScVal, buyAScVal, outScVal, inMaxScVal], config);
+      if (config?.simulate) return result as any; // Forward the simulation text
       console.log(`Swapped successfully to ${to}`);
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -213,7 +228,8 @@ import {
     to: string,
     shareAmount: string,
     minA: string,
-    minB: string
+    minB: string,
+    config?: SorobanContractConfig
   ): Promise<readonly [BigInt, BigInt] | null> {
     try {
       const toScVal = addressToScVal(to);
@@ -225,7 +241,8 @@ import {
         shareAmountScVal,
         minAScVal,
         minBScVal,
-      ]);
+      ], config);
+      if (config?.simulate) return result as any; // Forward the simulation text
       console.log(`Withdrawn successfully to ${to}:, ${result}`);
       return result ? (result as [BigInt, BigInt]) : null;
     } catch (error: unknown) {
@@ -235,9 +252,10 @@ import {
     }
   }
   
-  export async function getReserves(caller: string): Promise<readonly [BigInt, BigInt] | null> {
+  export async function getReserves(caller: string, config?: SorobanContractConfig): Promise<readonly [BigInt, BigInt] | null> {
     try {
-      const result = await contractInt(caller, "get_rsrvs", null);
+      const result = await contractInt(caller, "get_rsrvs", null, config);
+      if (config?.simulate) return result as any; // Forward the simulation text
       console.log("Reserves:", result);
       return result ? (result as [BigInt, BigInt]) : null;
     } catch (error: unknown) {

@@ -10,6 +10,8 @@ import {
 
 // Assuming env variables are already loaded elsewhere
 const STELLAR_PUBLIC_KEY = process.env.STELLAR_PUBLIC_KEY!;
+const STELLAR_NETWORK = (process.env.STELLAR_NETWORK as "testnet" | "mainnet") || "testnet";
+const SOROBAN_RPC_URL = process.env.SOROBAN_RPC_URL || "https://soroban-testnet.stellar.org";
 
 if (!STELLAR_PUBLIC_KEY) {
   throw new Error("Missing Stellar environment variables");
@@ -25,16 +27,24 @@ export const StellarContractTool = new DynamicStructuredTool({
     rewardRate: z.number().optional(), // Only for initialize
     amount: z.number().optional(), // For stake/unstake
     userAddress: z.string().optional(), // For get_stake
+    contractAddress: z.string().optional(), // For overriding default pool on mainnet
   }),
   func: async (input: any) => {
-    const { action, tokenAddress, rewardRate, amount, userAddress } = input;
+    const { action, tokenAddress, rewardRate, amount, userAddress, contractAddress } = input;
+    
+    const config = {
+      network: STELLAR_NETWORK,
+      rpcUrl: SOROBAN_RPC_URL,
+      contractAddress,
+    };
+    
     try {
       switch (action) {
         case "initialize": {
           if (!tokenAddress || rewardRate === undefined) {
             throw new Error("tokenAddress and rewardRate are required for initialize");
           }
-          const result = await initialize(STELLAR_PUBLIC_KEY, tokenAddress, rewardRate);
+          const result = await initialize(STELLAR_PUBLIC_KEY, tokenAddress, rewardRate, config);
           return result ?? "Contract initialized successfully.";
         }
 
@@ -42,7 +52,7 @@ export const StellarContractTool = new DynamicStructuredTool({
           if (amount === undefined) {
             throw new Error("amount is required for stake");
           }
-          const result = await stake(STELLAR_PUBLIC_KEY, amount);
+          const result = await stake(STELLAR_PUBLIC_KEY, amount, config);
           return result ?? `Staked ${amount} successfully.`;
         }
 
@@ -50,12 +60,12 @@ export const StellarContractTool = new DynamicStructuredTool({
           if (amount === undefined) {
             throw new Error("amount is required for unstake");
           }
-          const result = await unstake(STELLAR_PUBLIC_KEY, amount);
+          const result = await unstake(STELLAR_PUBLIC_KEY, amount, config);
           return result ?? `Unstaked ${amount} successfully.`;
         }
 
         case "claim_rewards": {
-          const result = await claimRewards(STELLAR_PUBLIC_KEY);
+          const result = await claimRewards(STELLAR_PUBLIC_KEY, config);
           return result ?? "Rewards claimed successfully.";
         }
 
@@ -63,7 +73,7 @@ export const StellarContractTool = new DynamicStructuredTool({
           if (!userAddress) {
             throw new Error("userAddress is required for get_stake");
           }
-          const stakeAmount = await getStake(STELLAR_PUBLIC_KEY, userAddress);
+          const stakeAmount = await getStake(STELLAR_PUBLIC_KEY, userAddress, config);
           return `Stake for ${userAddress}: ${stakeAmount}`;
         }
 
