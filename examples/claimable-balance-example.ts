@@ -13,29 +13,73 @@
  *
  * ⚠️ TESTNET ONLY. Never use mainnet secrets in examples.
  *
+ * Account funding
+ * ---------------
+ * The example needs two funded testnet accounts. It supports two modes:
+ *
+ *   A. Set env vars (preferred for repeated runs):
+ *        EXAMPLE_SOURCE_SECRET=S...
+ *        EXAMPLE_RECIPIENT_SECRET=S...
+ *      The accounts must already be funded on testnet.
+ *
+ *   B. Leave the env vars unset and the script will:
+ *        - generate two fresh keypairs,
+ *        - auto-fund them via the Friendbot faucet, and
+ *        - print the secrets so you can re-use them on subsequent runs.
+ *
  * Run with: ts-node examples/claimable-balance-example.ts
  */
 
 import { AgentClient } from "../agent";
-import { Keypair } from "@stellar/stellar-sdk";
+import { Horizon, Keypair } from "@stellar/stellar-sdk";
+
+const HORIZON_URL = "https://horizon-testnet.stellar.org";
+const FRIENDBOT_URL = "https://friendbot.stellar.org";
+
+/**
+ * Resolve a keypair from an env var (preferred) or generate + fund a fresh one
+ * via Friendbot. Verifies on-chain funding before returning so the rest of the
+ * example can rely on the account existing.
+ */
+async function resolveAccount(
+  label: string,
+  envVar: string,
+  server: Horizon.Server
+): Promise<Keypair> {
+  const fromEnv = process.env[envVar];
+  if (fromEnv) {
+    const kp = Keypair.fromSecret(fromEnv);
+    await server.loadAccount(kp.publicKey()); // throws if not funded
+    console.log(`  ✓ ${label}: ${kp.publicKey()} (from ${envVar})`);
+    return kp;
+  }
+
+  const kp = Keypair.random();
+  console.log(`  … ${label}: ${kp.publicKey()} (funding via Friendbot…)`);
+
+  const res = await fetch(`${FRIENDBOT_URL}?addr=${encodeURIComponent(kp.publicKey())}`);
+  if (!res.ok) {
+    throw new Error(
+      `Friendbot funding failed for ${label} (${res.status} ${res.statusText}). ` +
+        `Set ${envVar} to a pre-funded testnet secret to skip Friendbot.`
+    );
+  }
+  await server.loadAccount(kp.publicKey());
+  console.log(`  ✓ ${label} funded. Save the secret to re-use on next run:`);
+  console.log(`      export ${envVar}=${kp.secret()}`);
+  return kp;
+}
 
 async function exampleClaimableBalances() {
   console.log("🔒 Claimable Balance Example");
   console.log("=".repeat(60));
 
   const agent = new AgentClient({ network: "testnet" });
+  const server = new Horizon.Server(HORIZON_URL);
 
-  // In real usage, source/recipient would be funded testnet accounts.
-  const source = Keypair.random();
-  const recipient = Keypair.random();
-
-  console.log("\nGenerated test accounts:");
-  console.log(`  Source:    ${source.publicKey()}`);
-  console.log(`  Recipient: ${recipient.publicKey()}`);
-  console.log(
-    "\n⚠️  Fund these accounts on testnet before running for real:\n" +
-      "    https://laboratory.stellar.org/#account-creator?network=test"
-  );
+  console.log("\nResolving testnet accounts:");
+  const source = await resolveAccount("source   ", "EXAMPLE_SOURCE_SECRET", server);
+  const recipient = await resolveAccount("recipient", "EXAMPLE_RECIPIENT_SECRET", server);
 
   // ─── 1. Create ─────────────────────────────────────────────────────────
   // Lock 50 XLM for the recipient. Two layered conditions, expressed as a
@@ -89,10 +133,15 @@ async function exampleClaimableBalances() {
   );
 
   // ─── 3. Claim ──────────────────────────────────────────────────────────
-  // In a real flow you'd wait until the predicate is satisfied. Here we
-  // demonstrate the call shape — Horizon will reject the claim with a
-  // descriptive error if the predicate is not yet satisfied.
-  console.log("\nAttempting to claim (will fail if predicate not yet satisfied)...");
+  // Wait until the predicate window opens, then claim. Horizon rejects claims
+  // whose predicate is not yet satisfied with a descriptive error — we surface
+  // that for visibility before retrying.
+  const waitMs = Math.max(0, releaseAtUnix * 1000 - Date.now()) + 2_000;
+  console.log(
+    `\nWaiting ${Math.ceil(waitMs / 1000)}s for the predicate to open before claiming…`
+  );
+  await new Promise((r) => setTimeout(r, waitMs));
+
   try {
     const claimed = await agent.claimable.claim({
       claimerSecret: recipient.secret(),
@@ -101,8 +150,9 @@ async function exampleClaimableBalances() {
     console.log(`✅ Claimed! Tx hash: ${claimed.transactionHash}`);
   } catch (err) {
     console.log(
-      `⏳ Not yet claimable (expected): ${(err as Error).message}\n` +
-        `   Wait until ${new Date(releaseAtUnix * 1000).toISOString()} and retry.`
+      `❌ Claim failed: ${(err as Error).message}\n` +
+        `   If the error is 'predicate not satisfied', the example may have been ` +
+        `interrupted before the window opened — re-run to retry.`
     );
   }
 }
